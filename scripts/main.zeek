@@ -74,6 +74,7 @@ event zeek_init() &priority=5
 function get_durations(c: connection): Durations
 	{
 	local check_it: Durations;
+
 	if ( c$id$orig_h in special_cases )
 		check_it = special_cases[c$id$orig_h];
 	else if ( c$id$resp_h in special_cases )
@@ -93,7 +94,7 @@ function long_callback(c: connection, cnt: count): interval
 		Conn::set_conn_log_data_hack(c);
 
 		if ( netflow_style )
-		{
+			{
 			## Mark this connection as long lived and still active
 			c$conn$long = T;
 			c$conn$done = F;
@@ -101,20 +102,21 @@ function long_callback(c: connection, cnt: count): interval
 			## Write to conn.log, except when Zeek is shutting down to avoid duplicate records
 			if ( ! zeek_is_terminating() )
 				Log::write(Conn::LOG, c$conn);
-		} else {
+			}
+		else
 			Log::write(LongConnection::LOG, c$conn);
-		}
 
 		## Write a Notice if configured to do so
 		if ( do_notice )
-		{
-		local message = fmt("%s -> %s:%s remained alive for longer than %s", 
-							c$id$orig_h, c$id$resp_h, c$id$resp_p, duration_to_mins_secs(c$duration));
-		NOTICE([$note=LongConnection::found,
-				$msg=message,
-				$sub=fmt("%.2f", c$duration),
-				$conn=c]);
-		}
+			{
+			local message = fmt("%s -> %s:%s remained alive for longer than %s", 
+								c$id$orig_h, c$id$resp_h, c$id$resp_p, duration_to_mins_secs(c$duration));
+
+			NOTICE([$note=LongConnection::found,
+					$msg=message,
+					$sub=fmt("%.2f", c$duration),
+					$conn=c]);
+			}
 
 		## Notify other scripts that a long connection has been found
 		event LongConnection::long_conn_found(c);
@@ -146,10 +148,9 @@ function long_callback(c: connection, cnt: count): interval
 event new_connection(c: connection)
 	{
 	local check = get_durations(c);
+
 	if ( |check| > 0 )
-		{
 		ConnPolling::watch(c, long_callback, 1, check[0]);
-		}
 	}
 
 event connection_state_remove(c: connection)

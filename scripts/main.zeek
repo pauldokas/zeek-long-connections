@@ -156,6 +156,11 @@ event new_connection(c: connection)
 event connection_state_remove(c: connection)
 	{
 		if ( netflow_style )
+            {
+            if ( ! c$conn?$long )
+                c$conn$long = F;
+
 			## Mark this connectionn as complete
 			c$conn$done = T;
+            }
 	}

@@ -12,6 +12,14 @@ function set_conn_log_data_hack(c: connection)
 	}
 }
 
+redef record Conn::Info += {
+	## signals that a connection is long lived
+	long: bool &log &optional;
+
+	## signals that a connection is finished
+	done: bool &log &optional;
+};
+
 # Now onto the actual code for this script...
 
 module LongConnection;
@@ -43,7 +51,10 @@ export {
 	option repeat_last_duration: bool = F;
 
 	## Should a NOTICE be raised
-	option do_notice: bool = T;
+	option do_notice: bool = F;
+
+	## Write logs to the conn log vs conn_long
+	option netflow_style: bool = F;
 
 	## Event for other scripts to use
 	global long_conn_found: event(c: connection);
@@ -56,12 +67,14 @@ redef record connection += {
 
 event zeek_init() &priority=5
 	{
-	Log::create_stream(LOG, [$columns=Conn::Info, $path="conn_long"]);
+	if ( ! netflow_style )
+		Log::create_stream(LOG, [$columns=Conn::Info, $path="conn_long"]);
 	}
 
 function get_durations(c: connection): Durations
 	{
 	local check_it: Durations;
+
 	if ( c$id$orig_h in special_cases )
 		check_it = special_cases[c$id$orig_h];
 	else if ( c$id$resp_h in special_cases )
@@ -79,18 +92,33 @@ function long_callback(c: connection, cnt: count): interval
 	if ( c$duration >= check_it[c$long_conn_offset] )
 		{
 		Conn::set_conn_log_data_hack(c);
-		Log::write(LongConnection::LOG, c$conn);
 
+		if ( netflow_style )
+			{
+			## Mark this connection as long lived and still active
+			c$conn$long = T;
+			c$conn$done = F;
+
+			## Write to conn.log, except when Zeek is shutting down to avoid duplicate records
+			if ( ! zeek_is_terminating() )
+				Log::write(Conn::LOG, c$conn);
+			}
+		else
+			Log::write(LongConnection::LOG, c$conn);
+
+		## Write a Notice if configured to do so
 		if ( do_notice )
 			{
 			local message = fmt("%s -> %s:%s remained alive for longer than %s", 
 								c$id$orig_h, c$id$resp_h, c$id$resp_p, duration_to_mins_secs(c$duration));
+
 			NOTICE([$note=LongConnection::found,
 					$msg=message,
 					$sub=fmt("%.2f", c$duration),
 					$conn=c]);
 			}
 
+		## Notify other scripts that a long connection has been found
 		event LongConnection::long_conn_found(c);
 		}
 
@@ -120,8 +148,19 @@ function long_callback(c: connection, cnt: count): interval
 event new_connection(c: connection)
 	{
 	local check = get_durations(c);
+
 	if ( |check| > 0 )
-		{
 		ConnPolling::watch(c, long_callback, 1, check[0]);
-		}
+	}
+
+event connection_state_remove(c: connection)
+	{
+		if ( netflow_style )
+			{
+			if ( ! c$conn?$long )
+				c$conn$long = F;
+
+			## Mark this connectionn as complete
+			c$conn$done = T;
+			}
 	}

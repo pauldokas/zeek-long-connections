@@ -51,7 +51,7 @@ export {
 	option repeat_last_duration: bool = F;
 
 	## Should a NOTICE be raised
-	option do_notice: bool = T;
+	option do_notice: bool = F;
 
 	## Write logs to the conn log vs conn_long
 	option netflow_style: bool = F;
